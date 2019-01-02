@@ -278,3 +278,62 @@ class TestCompressEncrypt(unittest.TestCase):
 
         with self.assertRaises(PGPError):
             wrong_key.decrypt(message)
+
+class TestResolveAttachments(unittest.TestCase):
+
+    def test_single_attachment_on_filesystem(self):
+        """
+        When filename is a string and attachment_data is None,
+        _resolve_attachments should grab file from filesystem
+        """
+        file_on_filesystem = tempfile.NamedTemporaryFile()
+        file_on_filesystem_name = file_on_filesystem.name
+
+        attachments = utils._resolve_attachments(file_on_filesystem_name, None)
+
+        assert len(attachments) == 1
+
+        expected_header = 'attachment; filename="{}"'.format(
+            os.path.basename(file_on_filesystem_name)
+        )
+        actual_header = attachments[0].get('Content-Disposition')
+
+        assert actual_header == expected_header
+
+    def test_single_attachment_in_memory(self):
+        """
+        When filename is a string and attachment_data is a string,
+        _resolve_attachments should use attachment_data as file data,
+        and filename as the filename
+        """
+        email_attachment_name = 'my_test.csv'
+        attachment_data = 'some,csv,data\n'
+
+        attachments = utils._resolve_attachments(email_attachment_name, attachment_data)
+
+        assert len(attachments) == 1
+
+        expected_header = 'attachment; filename="my_test.csv"'
+        actual_header = attachments[0].get('Content-Disposition')
+
+        assert actual_header == expected_header
+
+    def test_multiple_attachments_in_memory(self):
+        """
+        When filename is a list and attachment_data is a list,
+        _resolve_attachments should use string objects in attachment_data
+        as file data, and each name in filename list as respective filenames
+        """
+        bunch_of_filenames = []
+        bunch_of_attachment_data = []
+        for i in range(5):
+            bunch_of_filenames.append('myfile{}.csv'.format(i))
+            bunch_of_attachment_data.append('somefiledata{}'.format(i))
+
+        attachments = utils._resolve_attachments(bunch_of_filenames, bunch_of_attachment_data)
+
+        assert len(attachments) == 5
+
+        for i in range(5):
+            expected_header = 'attachment; filename="myfile{}.csv"'.format(i)
+            assert attachments[i].get('Content-Disposition') == expected_header

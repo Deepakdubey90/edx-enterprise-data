@@ -72,32 +72,71 @@ def _get_compressed_file(files, password=None):
     return zipfile
 
 
-def send_email_with_attachment(subject, body, from_email, to_email, filename, attachment_data=None):
+def _resolve_attachments(filename, attachment_data):
+    """
+    Helper function to contain logic around determining file attachments and
+    filenames for an email sent with send_email_with_attachment
+
+    filename - can either be a string or a list of strings
+      - when string, if attachment_data is None, this is the filename of the
+        intended attachment on the filesystem as well as the name of the file
+        that gets attached to the email
+      - when string, and attachment_data is a string, this is the name of
+        the file that is attached to the email
+      - when list of strings, it is a list of filenames to refer to the
+        soon-to-be attachments held in the attachment_data list
+
+    attachment_data - can be None, a string, or a list of strings
+      - when None, it is assumed file lives on file system
+      - when string, it is assumed the file data is in memory (as a string)
+      - when list, it is assumed there are data for several files, each as
+        a string within the list.
+      - when list, it is REQUIRED to also pass in a list as filename so the
+        email attachments can have names when sent
+
+    Returns a list of MIMEApplication objects
+    """
+
+    attachments = []
+    if isinstance(attachment_data, list):
+        for index, item in enumerate(attachment_data):
+            msg_attachment = MIMEApplication(item)
+            msg_attachment.add_header(
+                'Content-Disposition',
+                'attachment',
+                filename=os.path.basename(filename[index])
+            )
+            msg_attachment.set_type('application/zip')
+            attachments.append(msg_attachment)
+    else:
+        if attachment_data:
+            msg_attachment = MIMEApplication(attachment_data)
+        else:
+            msg_attachment = MIMEApplication(open(filename, 'rb').read())
+        msg_attachment.add_header('Content-Disposition', 'attachment', filename=os.path.basename(filename))
+        msg_attachment.set_type('application/zip')
+        attachments.append(msg_attachment)
+
+    return attachments
+
+
+def send_email_with_attachment(subject, body, from_email, to_email, filename='', attachment_data=None):
     """
     Send an email with a file attachment.
 
     Adapted from https://gist.github.com/yosemitebandit/2883593
 
-    attachment_data should be string data if value is passed in.
-    If filename refers to a file that lives on the filesystem instead
-    of just the name you want the attachment to have, no need to
-    set attachment_data to anything. This gives us the option of
-    handing this function string data that lives in memory instead
-    of needing to first write to a file.
+    filename can be a string or list of strings
+    attachment_data can be None, a string, or a list of strings
     """
     # connect to SES
     client = boto3.client('ses', region_name=AWS_REGION)
 
     # the message body
     msg_body = MIMEText(body)
-    
+
     # the attachment
-    if attachment_data:
-        msg_attachment = MIMEApplication(attachment_data)
-    else:
-        msg_attachment = MIMEApplication(open(filename, 'rb').read())
-    msg_attachment.add_header('Content-Disposition', 'attachment', filename=os.path.basename(filename))
-    msg_attachment.set_type('application/zip')
+    attachments = _resolve_attachments(filename, attachment_data)
 
     # iterate over each email in the list to send emails independently
     for email in to_email:
@@ -111,7 +150,8 @@ def send_email_with_attachment(subject, body, from_email, to_email, filename, at
 
         # attach the message body and attachment
         msg.attach(msg_body)
-        msg.attach(msg_attachment)
+        for msg_attachment in attachments:
+            msg.attach(msg_attachment)
 
         # and send the message
         result = client.send_raw_email(RawMessage={'Data': msg.as_string()}, Source=msg['From'], Destinations=[email])

@@ -4,11 +4,17 @@ External Resource Link Report Generation Code.
 """
 from __future__ import absolute_import, unicode_literals
 
+from collections import Counter
+from datetime import date
+import operator
 import logging
 import os
 import re
 import sys
-from datetime import date
+try:
+    from urllib.parse import urlparse
+except ImportError:
+    from urlparse import urlparse
 
 from py2neo import Graph
 
@@ -18,7 +24,35 @@ logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
 
 
-def generate_csv_string(processed_results):
+def generate_aggregate_report_csv_string(processed_results):
+    """
+    Takes a dict of processed results and turns it into a string suitable
+    to be written as a csv file
+
+    Returns (unicode) string
+    """
+    csv_string = u'Course Key,Course Title,Partner,External Domain,Count\n'
+    for course_key, data in processed_results.items():
+        urls_sorted_by_counts = sorted(
+            data['external_links'].items(),
+            key=operator.itemgetter(1),
+            reverse=True
+        )
+        stringified_urls_and_counts = [
+            u'{},{}'.format(url, count)
+            for url, count in urls_sorted_by_counts
+        ]
+        links = u'\n,,,'.join(stringified_urls_and_counts)
+        csv_string += u'{},"{}",{},{}\n'.format(
+            course_key,
+            data['course_title'],
+            data['organization'],
+            links,
+        )
+    return csv_string
+
+
+def generate_exhaustive_report_csv_string(processed_results):
     """
     Takes a dict of processed results and turns it into a string suitable
     to be written as a csv file
@@ -55,11 +89,15 @@ def gather_links_from_html(html_string):
     return links
 
 
-def process_results(raw_results):
+def process_coursegraph_results(raw_results, domains_and_counts=False):
     """
     Takes the data from a coursegraph query
 
-    Returns a dict with course keys as the key and list data about that course
+    domains_and_counts - specfies that urls should be stripped down to only
+                         their domain, and then a count of occurences is also
+                         added to processed_results dixt
+
+    Returns a dict with course keys as the key and dict data about that course
     as value
     """
     processed_results = {}
@@ -74,14 +112,37 @@ def process_results(raw_results):
         if not external_links:
             continue
 
-        if course_key not in processed_results:
-            processed_results[course_key] = {
-                'course_title': entry['course_title'],
-                'organization': entry['organization'],
-                'external_links': external_links,
-            }
+        if domains_and_counts:
+            # change each link to just the domain
+            external_links = [
+                '{uri.scheme}://{uri.netloc}/'.format(uri=urlparse(link))
+                for link in external_links
+            ]
+            # calculate the unique counts for all the urls
+            links_with_counts = dict(Counter(external_links))
+
+            if course_key not in processed_results:
+                processed_results[course_key] = {
+                    'course_title': entry['course_title'],
+                    'organization': entry['organization'],
+                    'external_links': links_with_counts,
+                }
+            else:
+                for link, count in links_with_counts.items():
+                    if link in processed_results[course_key]['external_links']:
+                        processed_results[course_key]['external_links'][link] += count
+                    else:
+                        processed_results[course_key]['external_links'][link] = count
         else:
-            processed_results[course_key]['external_links'].update(external_links)
+            if course_key not in processed_results:
+                processed_results[course_key] = {
+                    'course_title': entry['course_title'],
+                    'organization': entry['organization'],
+                    'external_links': external_links,
+                }
+            else:
+                processed_results[course_key]['external_links'].update(external_links)
+
     return processed_results
 
 
@@ -118,11 +179,26 @@ def generate_and_email_report():
     LOGGER.info("Querying Course Graph DB...")
     raw_results = query_coursegraph()
 
-    LOGGER.info("Processing {} html blobs returned...".format(len(raw_results)))
-    processed_results = process_results(raw_results)
+    LOGGER.info("Generating exhaustive external links spreadsheet...")
+    exhaustive_report = generate_exhaustive_report_csv_string(
+        process_coursegraph_results(raw_results)
+    )
 
-    LOGGER.info("Generating spreadsheet...")
-    csv_string = generate_csv_string(processed_results)
+    LOGGER.info("Generating aggregate external links spreadsheet...")
+    aggregate_report = generate_aggregate_report_csv_string(
+        process_coursegraph_results(raw_results, domains_and_counts=True)
+    )
+
+    attachments = [
+        exhaustive_report.encode('utf-8'),
+        aggregate_report.encode('utf-8'),
+    ]
+
+    today = str(date.today())
+    filenames = [
+        'external-resource-link-report-{}.csv'.format(today),
+        'external-resource-domain-report-{}.csv'.format(today),
+    ]
 
     subject = 'External Resource Link Report'
     body = '''Dear Customer Success,
@@ -136,16 +212,15 @@ Sincerely,
 The Enterprise Team'''
 
     from_email = os.environ.get('SEND_EMAIL_FROM')
-    filename = 'external-resource-link-report-{}.csv'.format(str(date.today()))
 
-    LOGGER.info("Emailing spreadsheet...")
+    LOGGER.info("Emailing spreadsheets...")
     send_email_with_attachment(
         subject,
         body,
         from_email,
         TO_EMAILS.split(','),
-        filename,
-        attachment_data=csv_string.encode('utf-8')
+        filename=filenames,
+        attachment_data=attachments
     )
 
 
