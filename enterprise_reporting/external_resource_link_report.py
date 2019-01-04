@@ -82,7 +82,7 @@ def gather_links_from_html(html_string):
     """
     pattern = 'https?://.*?[" <]'
     links = [
-        link[0:-1]
+        link[0:-1].strip()
         for link in re.findall(pattern, html_string,)
         if (not link.lower().endswith('.png"') and
             not link.lower().endswith('.jpg"') and
