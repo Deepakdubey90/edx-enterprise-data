@@ -107,7 +107,6 @@ class TestUtilsCoursegraph(unittest.TestCase):
                 },
             },
         }
-        print process_coursegraph_results(self.raw_data)
         assert process_coursegraph_results(self.raw_data) == expected
 
     def test_create_aggregate_report_csv_string(self):
