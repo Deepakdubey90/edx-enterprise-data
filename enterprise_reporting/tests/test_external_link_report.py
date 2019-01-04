@@ -7,8 +7,11 @@ from collections import OrderedDict
 import unittest
 
 from enterprise_reporting.external_resource_link_report import (
-    generate_aggregate_report_csv_string,
-    generate_exhaustive_report_csv_string,
+    AGGREGATE_REPORT_CSV_HEADER_ROW,
+    EXHAUSTIVE_REPORT_CSV_HEADER_ROW,
+    create_csv_string,
+    create_columns_for_aggregate_report,
+    create_columns_for_exhaustive_report,
     process_coursegraph_results,
 )
 
@@ -124,7 +127,7 @@ class TestUtilsCoursegraph(unittest.TestCase):
         }
         assert process_coursegraph_results(self.raw_data, domains_and_counts=True) == expected
 
-    def test_generate_aggregate_report_csv_string(self):
+    def test_create_aggregate_report_csv_string(self):
         """
         generate_aggregate_report_csv_string should create the expected csv
         string given some processed results
@@ -157,7 +160,12 @@ class TestUtilsCoursegraph(unittest.TestCase):
             u'course-v1:I+am+a+test2,"course2",edx,http://www.google2.com/,4\n'
             u'course-v1:I+am+a+test3,"course3",edx2,http://www.google3.com/,1\n'
         )
-        assert generate_aggregate_report_csv_string(processed_results) == expected
+        actual = create_csv_string(
+            processed_results,
+            AGGREGATE_REPORT_CSV_HEADER_ROW,
+            create_columns_for_aggregate_report,
+        )
+        assert actual == expected
 
     def test_generate_exhaustive_report_csv_string(self):
         """
@@ -196,5 +204,9 @@ class TestUtilsCoursegraph(unittest.TestCase):
             u',,,http://www.google2.com\n,,,http://www.google2.com/someextension/\n'
             u'course-v1:I+am+a+test3,"course3",edx2,http://www.google3.com\n'
         )
-        assert generate_exhaustive_report_csv_string(processed_results) == expected
-
+        actual = create_csv_string(
+            processed_results,
+            EXHAUSTIVE_REPORT_CSV_HEADER_ROW,
+            create_columns_for_exhaustive_report,
+        )
+        assert actual == expected

@@ -23,52 +23,56 @@ from enterprise_reporting.utils import send_email_with_attachment
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
 
+AGGREGATE_REPORT_CSV_HEADER_ROW = u'Course Key,Course Title,Partner,External Domain,Count\n'
+EXHAUSTIVE_REPORT_CSV_HEADER_ROW = u'Course Key,Course Title,Partner,External Links\n'
 
-def generate_aggregate_report_csv_string(processed_results):
+
+def create_csv_string(processed_results, header_row, additional_columns):
     """
-    Takes a dict of processed results and turns it into a string suitable
-    to be written as a csv file
+    generates a string suitable to be written as a csv file. it will build
+    upon the first string handed in via header_row
+
+    processed_results - a dictionary with course keys as keys and a value that
+                        also is a dict, containing keys for course_title and
+                        organization (this will constitute the first 3 columns)
+    header_row - a string suitable to be written to a csv file
+               - must end with a newline
+    additional_columns - a callable that takes a course data dict that can
+                         return a csv string for any additional columns
 
     Returns (unicode) string
     """
-    csv_string = u'Course Key,Course Title,Partner,External Domain,Count\n'
     for course_key, data in processed_results.items():
-        urls_sorted_by_counts = sorted(
-            data['external_links'].items(),
-            key=operator.itemgetter(1),
-            reverse=True
-        )
-        stringified_urls_and_counts = [
-            u'{},{}'.format(url, count)
-            for url, count in urls_sorted_by_counts
-        ]
-        links = u'\n,,,'.join(stringified_urls_and_counts)
-        csv_string += u'{},"{}",{},{}\n'.format(
+        header_row += u'{},"{}",{},{}\n'.format(
             course_key,
             data['course_title'],
             data['organization'],
-            links,
+            additional_columns(data),
         )
-    return csv_string
+    return header_row
 
 
-def generate_exhaustive_report_csv_string(processed_results):
+def create_columns_for_aggregate_report(data):
     """
-    Takes a dict of processed results and turns it into a string suitable
-    to be written as a csv file
-
-    Returns (unicode) string
+    Creates a csv string for additional columns in report
     """
-    csv_string = u'Course Key,Course Title,Partner,External Links\n'
-    for course_key, data in processed_results.items():
-        links = u'\n,,,'.join(data['external_links'])
-        csv_string += u'{},"{}",{},{}\n'.format(
-            course_key,
-            data['course_title'],
-            data['organization'],
-            links,
-        )
-    return csv_string
+    urls_sorted_by_counts = sorted(
+        data['external_links'].items(),
+        key=operator.itemgetter(1),
+        reverse=True
+    )
+    stringified_urls_and_counts = [
+        u'{},{}'.format(url, count)
+        for url, count in urls_sorted_by_counts
+    ]
+    return u'\n,,,'.join(stringified_urls_and_counts)
+
+
+def create_columns_for_exhaustive_report(data):
+    """
+    Creates a csv string for additional columns in report
+    """
+    return u'\n,,,'.join(data['external_links'])
 
 
 def gather_links_from_html(html_string):
@@ -95,7 +99,7 @@ def process_coursegraph_results(raw_results, domains_and_counts=False):
 
     domains_and_counts - specfies that urls should be stripped down to only
                          their domain, and then a count of occurences is also
-                         added to processed_results dixt
+                         added to processed_results dict
 
     Returns a dict with course keys as the key and dict data about that course
     as value
@@ -180,13 +184,17 @@ def generate_and_email_report():
     raw_results = query_coursegraph()
 
     LOGGER.info("Generating exhaustive external links spreadsheet...")
-    exhaustive_report = generate_exhaustive_report_csv_string(
-        process_coursegraph_results(raw_results)
+    exhaustive_report = create_csv_string(
+        process_coursegraph_results(raw_results),
+        EXHAUSTIVE_REPORT_CSV_HEADER_ROW,
+        create_columns_for_exhaustive_report,
     )
 
     LOGGER.info("Generating aggregate external links spreadsheet...")
-    aggregate_report = generate_aggregate_report_csv_string(
-        process_coursegraph_results(raw_results, domains_and_counts=True)
+    aggregate_report = create_csv_string(
+        process_coursegraph_results(raw_results, domains_and_counts=True),
+        AGGREGATE_REPORT_CSV_HEADER_ROW,
+        create_columns_for_aggregate_report
     )
 
     attachments = [
