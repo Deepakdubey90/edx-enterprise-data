@@ -30,7 +30,7 @@ class TestUtilsCoursegraph(unittest.TestCase):
             {'course_title': 'course1',
              'organization': 'edx',
              'h.course_key': 'course-v1:I+am+a+test1',
-             'h.data': '<span href="http://www.google.com">my site</span>'},
+             'h.data': '<span href="http://www.google.com">my site is http://www.google.com</span>'},
             {'course_title': 'course1',
              'organization': 'edx',
              'h.course_key': 'course-v1:I+am+a+test1',
@@ -81,6 +81,10 @@ class TestUtilsCoursegraph(unittest.TestCase):
                     'http://www.google.com',
                     'http://www.facebook.com/'
                 ]),
+                'domain_count': {
+                    'http://www.google.com': 3,
+                    'http://www.facebook.com': 1,
+                },
             },
             'course-v1:I+am+a+test2': {
                 'course_title': 'course2',
@@ -90,42 +94,21 @@ class TestUtilsCoursegraph(unittest.TestCase):
                     'http://www.google2.com',
                     'http://www.google2.com/someextension/',
                 ]),
+                'domain_count': {
+                    'http://www.google2.com': 4,
+                },
             },
             'course-v1:I+am+a+test3': {
                 'course_title': 'course3',
                 'organization': 'edx2',
                 'external_links': set(['http://www.google3.com']),
-            },
-        }
-        assert process_coursegraph_results(self.raw_data) == expected
-
-    def test_process_coursegraph_results_domains_and_counts(self):
-        """
-        process_coursegraph_results should properly structure the data in a dictionary,
-        rolling up url domains and their counts when domains_and_counts is
-        True and passed to function
-        """
-        expected = {
-            'course-v1:I+am+a+test1': {
-                'course_title': 'course1',
-                'organization': 'edx',
-                'external_links': {
-                    'http://www.google.com/': 2,
-                    'http://www.facebook.com/': 1,
+                'domain_count': {
+                    'http://www.google3.com': 1,
                 },
             },
-            'course-v1:I+am+a+test2': {
-                'course_title': 'course2',
-                'organization': 'edx',
-                'external_links': {'http://www.google2.com/': 4},
-            },
-            'course-v1:I+am+a+test3': {
-                'course_title': 'course3',
-                'organization': 'edx2',
-                'external_links': {'http://www.google3.com/': 1},
-            },
         }
-        assert process_coursegraph_results(self.raw_data, domains_and_counts=True) == expected
+        print process_coursegraph_results(self.raw_data)
+        assert process_coursegraph_results(self.raw_data) == expected
 
     def test_create_aggregate_report_csv_string(self):
         """
@@ -137,28 +120,28 @@ class TestUtilsCoursegraph(unittest.TestCase):
             ('course-v1:I+am+a+test1', {
                 'course_title': 'course1',
                 'organization': 'edx',
-                'external_links': OrderedDict([
-                    ('http://www.google.com/', 2),
-                    ('http://www.facebook.com/', 1),
+                'domain_count': OrderedDict([
+                    ('http://www.google.com', 2),
+                    ('http://www.facebook.com', 1),
                 ]),
             }),
             ('course-v1:I+am+a+test2', {
                 'course_title': 'course2',
                 'organization': 'edx',
-                'external_links': {'http://www.google2.com/': 4},
+                'domain_count': {'http://www.google2.com': 4},
             }),
             ('course-v1:I+am+a+test3', {
                 'course_title': 'course3',
                 'organization': 'edx2',
-                'external_links': {'http://www.google3.com/': 1},
+                'domain_count': {'http://www.google3.com': 1},
             }),
         ])
         expected = (
             u'Course Key,Course Title,Partner,External Domain,Count\n'
-            u'course-v1:I+am+a+test1,"course1",edx,http://www.google.com/,2\n'
-            u',,,http://www.facebook.com/,1\n'
-            u'course-v1:I+am+a+test2,"course2",edx,http://www.google2.com/,4\n'
-            u'course-v1:I+am+a+test3,"course3",edx2,http://www.google3.com/,1\n'
+            u'course-v1:I+am+a+test1,"course1",edx,http://www.google.com,2\n'
+            u',,,http://www.facebook.com,1\n'
+            u'course-v1:I+am+a+test2,"course2",edx,http://www.google2.com,4\n'
+            u'course-v1:I+am+a+test3,"course3",edx2,http://www.google3.com,1\n'
         )
         actual = create_csv_string(
             processed_results,

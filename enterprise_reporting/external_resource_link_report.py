@@ -57,7 +57,7 @@ def create_columns_for_aggregate_report(data):
     Creates a csv string for additional columns in report
     """
     urls_sorted_by_counts = sorted(
-        data['external_links'].items(),
+        data['domain_count'].items(),
         key=operator.itemgetter(1),
         reverse=True
     )
@@ -81,7 +81,7 @@ def gather_links_from_html(html_string):
     returns them as a set
     """
     pattern = 'https?://.*?[" <]'
-    links = set([
+    links = [
         link[0:-1]
         for link in re.findall(pattern, html_string,)
         if (not link.lower().endswith('.png"') and
@@ -89,7 +89,7 @@ def gather_links_from_html(html_string):
             not link.lower().endswith('.jpeg"') and
             not link.lower().endswith('.gif"') and
             not '.edx.org' in link)
-    ])
+    ]
     return links
 
 
@@ -116,36 +116,30 @@ def process_coursegraph_results(raw_results, domains_and_counts=False):
         if not external_links:
             continue
 
-        if domains_and_counts:
-            # change each link to just the domain
-            external_links = [
-                '{uri.scheme}://{uri.netloc}/'.format(uri=urlparse(link))
-                for link in external_links
-            ]
-            # calculate the unique counts for all the urls
-            links_with_counts = dict(Counter(external_links))
-
-            if course_key not in processed_results:
-                processed_results[course_key] = {
-                    'course_title': entry['course_title'],
-                    'organization': entry['organization'],
-                    'external_links': links_with_counts,
-                }
-            else:
-                for link, count in links_with_counts.items():
-                    if link in processed_results[course_key]['external_links']:
-                        processed_results[course_key]['external_links'][link] += count
-                    else:
-                        processed_results[course_key]['external_links'][link] = count
+        # Create entry in processed_results and keep external_links up to date
+        if course_key not in processed_results:
+            processed_results[course_key] = {
+                'course_title': entry['course_title'],
+                'organization': entry['organization'],
+                'external_links': set(external_links),
+                'domain_count': {},
+            }
         else:
-            if course_key not in processed_results:
-                processed_results[course_key] = {
-                    'course_title': entry['course_title'],
-                    'organization': entry['organization'],
-                    'external_links': external_links,
-                }
+            processed_results[course_key]['external_links'].update(external_links)
+
+        # Now use external links to create the domains and counts
+        domains = [
+            '{uri.scheme}://{uri.netloc}'.format(uri=urlparse(link))
+            for link in external_links
+        ]
+        # calculate the unique counts for all the urls
+        domains_with_counts = dict(Counter(domains))
+
+        for domain, count in domains_with_counts.items():
+            if domain in processed_results[course_key]['domain_count']:
+                processed_results[course_key]['domain_count'][domain] += count
             else:
-                processed_results[course_key]['external_links'].update(external_links)
+                processed_results[course_key]['domain_count'][domain] = count
 
     return processed_results
 
@@ -182,17 +176,18 @@ def generate_and_email_report():
     """
     LOGGER.info("Querying Course Graph DB...")
     raw_results = query_coursegraph()
+    processed_results = process_coursegraph_results(raw_results)
 
     LOGGER.info("Generating exhaustive external links spreadsheet...")
     exhaustive_report = create_csv_string(
-        process_coursegraph_results(raw_results),
+        processed_results,
         EXHAUSTIVE_REPORT_CSV_HEADER_ROW,
         create_columns_for_exhaustive_report,
     )
 
     LOGGER.info("Generating aggregate external links spreadsheet...")
     aggregate_report = create_csv_string(
-        process_coursegraph_results(raw_results, domains_and_counts=True),
+        processed_results,
         AGGREGATE_REPORT_CSV_HEADER_ROW,
         create_columns_for_aggregate_report
     )
